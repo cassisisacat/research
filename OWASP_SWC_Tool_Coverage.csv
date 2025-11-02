@@ -1,0 +1,11 @@
+OWASP_SC,Mapped_SWC,Slither,Solhint,MythX,Echidna,Manticore
+SC01,"SWC-101, SWC-105",Full,Partial,Partial,Weak,Partial
+SC02,"SWC-128, SWC-129",Partial,Weak,Partial,Weak/Partial,Weak/Partial
+SC03,"SWC-107, SWC-113",Partial,Weak,Partial,Partial,Partial
+SC04,"SWC-116, SWC-104",Partial,Full,Partial,Partial,Partial
+SC05,SWC-107,Full,Weak,Full,Partial,Full
+SC06,"SWC-104, SWC-105",Full,Partial,Partial,Weak,Partial
+SC07,"SWC-128, SWC-129",Weak,Weak,Partial,Partial,Partial
+SC08,SWC-101,Full,Weak,Full,Partial,Full
+SC09,"SWC-123, SWC-120",Weak,Weak,Partial,Weak,Weak
+SC10,"SWC-113, SWC-114",Partial,Weak,Partial,Partial,Partial
