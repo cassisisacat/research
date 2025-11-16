@@ -312,4 +312,166 @@
 
 ---
 
+这是一个关于 **Clojure 静态分析 (SAST)** 工具（clj‑kondo、Eastwood、Kibit、Semgrep、SonarQube（Clojure 插件））与 **OWASP Top‑10** 漏洞覆盖率的深入调研报告（现状 +优缺点 +规则映射 +建议）。结论是：目前 Clojure 生态中这些工具主要是 *代码质量（lint）* 工具，而不是专门为安全漏洞 (尤其是业务安全) 设计的 SAST，因此对 OWASP Top‑10 的覆盖非常有限。下面是详细内容。
+
+---
+
+## 一、工具概览（clojure 扫描工具现状）
+
+首先介绍这五种工具在 Clojure 生态中的作用、使用方式、优缺点。
+
+| 工具                             | 类型                         | 功能 / 扫描逻辑                                                                                              | 优点                                                                                                    | 限制 /弱点 (尤其是安全扫描方面)                                                                |
+| ------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **clj‑kondo**                  | 静态分析 / linter              | 基于 AST 分析 (tools.analysis) + 内置 lint 规则 + 支持 “hooks” 扩展。 ([GitHub][1])                                 | 非常快速 (GraalVM 本地编译)，IDE 集成好 (VSCode, Emacs 等) ([cljdoc.org][2])；支持自定义规则 & hooks ([Zenn][3])           | 主要聚焦语法错误、未使用代码、重复定义、命名空间问题等，**不专注于安全漏洞**；对于宏、数据流安全 (如注入、权限控制) 检测能力弱。              |
+| **Eastwood**                   | Linter / 静态分析              | 使用 `tools.analyzer` 宏展开 + AST + eval 风格分析。 ([GitHub][4])                                               | 分析更深入 (比简单 lint 更语义)，容易集成 CI (Leiningen 插件) ([GitHub][4])；能捕获一些逻辑 bug (如错误的 arity, dead code, misuse) | 主要聚焦 bug /代码反模式，而非安全漏洞 (如认证、访问控制、注入)；没有针对 OWASP 类别的安全规则。                          |
+| **Kibit**                      | 代码风格 / 习惯建议                | 静态代码重构建议 (建议将“不优雅”写法改为更 idiomatic Clojure) ([/dev/solita][5])                                          | 帮助提高代码可读性和 idiomatic 性，促进重构                                                                           | **不分析安全问题**。它关注的是风格、惯用法 (例如 `> x 0` → `pos? x`)，而不是安全漏洞。                          |
+| **Semgrep**                    | 通用 SAST 工具                 | 基于模式 (pattern) 或正则 (pattern-regex) 检查 AST 或源代码                                                         | **非常灵活**：可为 Clojure 自定义规则 (generic / regex 模式)，可以写安全规则 (如 injection、IDOR、权限控制等)                       | Semgrep **没有原生 Clojure AST 支持** (只 generic 模式)，规则覆盖依赖手写；目前社区针对 Clojure 的安全规则很少。   |
+| **SonarQube-plugin (Clojure)** | 静态分析 / SAST (通过 SonarQube) | Sonar Clojure 插件 (如 fsantiag/sonar-clojure) 使用 Eastwood、Kibit、clj-kondo 等作为传感器 (sensors) ([GitHub][6]) | 可将 lint 警告集中到 SonarQube 仪表板；对代码质量统一管理；集成现有 Sonar 工具链                                                  | 插件本身 **不是专为安全漏洞 (OWASP Top‑10) 做检测**；大多是质量规则 (来自 Eastwood、kibit)；安全规则 (如依赖漏洞) 受限。 |
+
+---
+
+## 二、OWASP Top-10 与这些工具的覆盖率分析
+
+下面是根据 OWASP Top-10 (以 2021 版本为例) 来看，这些 Clojure 静态分析工具 **能覆盖哪些漏洞类型 (如果有)**，以及覆盖程度 (基于现有工具定位 +社区资料推断)：
+
+首先列出 **OWASP Top‑10 (2021)**：
+
+1. A01: Broken Access Control
+2. A02: Cryptographic Failures
+3. A03: Injection
+4. A04: Insecure Design
+5. A05: Security Misconfiguration
+6. A06: Vulnerable and Outdated Components
+7. A07: Identification and Authentication Failures
+8. A08: Software and Data Integrity Failures
+9. A09: Security Logging and Monitoring Failures
+10. A10: Server-Side Request Forgery (SSRF)
+
+下面按漏洞类型看这些工具覆盖情况：
+
+| OWASP 漏洞类型                                          | clj‑kondo            | Eastwood      | Kibit | Semgrep                                            | SonarQube‑Clojure 插件                                   |
+| --------------------------------------------------- | -------------------- | ------------- | ----- | -------------------------------------------------- | ------------------------------------------------------ |
+| **A01: Broken Access Control**                      | ❌ 无专门规则              | ❌ 无           | ❌     | ⚠️ 可写规则 (pattern)                                  | ⚠️ 依赖 Semgrep 或自定义规则，但插件自身无。                           |
+| **A02: Cryptographic Failures**                     | ❌ 语法检查 (可能警告不安全 API) | ❌ 主要警告，但不聚焦加密 | ❌     | ⚠️ 可以写规则检测硬编码密钥、弱加密 API                            | ⚠️ 插件无默认安全加密规则 (主要是 lint)                              |
+| **A03: Injection**                                  | ❌ 无污点分析 /安全检测        | ❌ 无           | ❌ 无   | ⚠️ 极有可能：可写 pattern 检测 `(str …)` 拼 SQL、参数直接传给 DB 函数 | ⚠️ 只有自定义规则 (通过 Semgrep) 或手动审查。                         |
+| **A04: Insecure Design**                            | ❌                    | ❌             | ❌     | ❌                                                  | ❌ (设计层漏洞难以 lint)                                       |
+| **A05: Security Misconfiguration**                  | ❌                    | ❌             | ❌     | ⚠️ 部分 (可以检测硬编码 CORS、配置常量)                          | ⚠️ 插件可以通过规则 +自定义检测，但默认无高级安全 misconfig 检查。              |
+| **A06: Vulnerable and Outdated Components**         | ❌                    | ❌             | ❌     | ❌                                                  | ⚠️ Sonar 插件 `nvd` sensor 可以检测依赖漏洞 (如果启用) ([GitHub][6]) |
+| **A07: Identification and Authentication Failures** | ❌                    | ❌             | ❌     | ⚠️ 自定义规则 (如不安全 session / cookie / JWT 使用)          | ⚠️ 插件本身无，但可以结合自定义 Semgrep 或代码审查。                       |
+| **A08: Software and Data Integrity Failures**       | ❌                    | ❌             | ❌     | ❌                                                  | ❌                                                      |
+| **A09: Security Logging and Monitoring Failures**   | ❌                    | ❌             | ❌     | ❌                                                  | ❌                                                      |
+| **A10: SSRF**                                       | ❌                    | ❌             | ❌     | ⚠️ 可写规则 (检测不安全 HTTP 客户端调用)                         | ⚠️ 插件无，但用户可结合 Semgrep 规则 /自定义检查。                       |
+
+**覆盖率总结 (粗略)**：
+
+* **大多数 OWASP Top-10 漏洞类型：这些 Clojure 工具覆盖度非常低**。
+* **Semgrep** 是覆盖最多 (但需要手写规则) 的工具。
+* **SonarQube-plugin** 可以通过其 `nvd` sensor 检测依赖漏洞 (A06)，但其他 OWASP 类型多依赖外部规则。
+* **clj-kondo / Eastwood / Kibit** 主要是 lint / 代码质量分析，并不内建安全规则。
+
+---
+
+## 三、具体规则或机制对应 (如果有)
+
+下面是对于每个工具，在哪些 (如果有) 具体规则或机制可以用于检测或辅助发现某些 OWASP 漏洞类型。
+
+1. **clj‑kondo**
+
+   * 本身没有安全特定 lint 规则 (如 injection、auth) — 它主要是语法正确性、未使用变量、命名空间问题等。 ([GitHub][1])
+   * 但它支持 **hooks** (hook API)，可以扩展以分析宏展开、特定函数调用等。 ([Zenn][3])
+   * 通过 hook 可以监控不安全 API 使用 (如 `clojure.java.jdbc`、`clojure.java.shell/sh`、`read-string`) 等，从而间接检测潜在风险。
+
+2. **Eastwood**
+
+   * Eastwood 自带多个 lint “linters”（检查器）：可通过 `eastwood.lint/effective-linters` 配置启用/禁用不同 lint。 ([cljdoc.org][7])
+   * 用户可以用 Eastwood 警告来帮助发现潜在危险 (例如 `suspicious-expression`、`unused-locals` 等)，但没有针对安全漏洞 (如 injection、auth) 的专门 lint。
+   * 注释抑制 (suppress) 支持 (special comments) ([cljdoc.org][8])，但不构建安全逻辑。
+
+3. **Kibit**
+
+   * Kibit 主要提供 “idiomatic Clojure 建议” (例如将某些表达式替换成更简洁/安全/易读的形式) ([/dev/solita][5])
+   * 它对安全问题 (如 SQL 注入、访问控制) 没有内建检测。
+
+4. **Semgrep**
+
+   * Semgrep 支持 generic (pattern) 和 regex 规则，可以编写适合 Clojure 的安全规则 (如前面讨论的 IDOR、JWT misuse、注入等)。
+   * 虽然没有现成官方 Clojure 安全规则库 (广泛使用的还很少)，但用户完全可自定义。
+   * 优势是其灵活性：能够针对业务逻辑写规则 (比如 “禁止在 handler 中直接用未验证参数访问数据库”)。
+
+5. **SonarQube Clojure Plugin (fsantiag/sonar-clojure)**
+
+   * 该插件支持多个 “sensor”：`eastwood`, `kibit`, `kondo`, `ancient`, `nvd`, `cloverage`。 ([GitHub][6])
+   * `nvd` sensor：检查依赖 (JAR) 是否有已知漏洞 (基于 NVD) → 可以覆盖 **A06 Vulnerable Components**。 ([GitHub][6])
+   * 通过 Eastwood / Kibit 警告，Sonar 提供质量视图，但这些警告不是专为安全漏洞 (如 injection /访问控制) 设计。
+
+---
+
+## 四、优缺点综合比较 (安全视角)
+
+### 优点
+
+* **成熟稳定**：clj-kondo、Eastwood、Kibit 都是 Clojure 生态中的成熟 lint/分析工具，集成良好，社区有支持。
+* **CI 集成方便**：这些工具可以很容易集成到 CI (Leiningen, CLI) 中。
+* **性能好**：clj-kondo 非常快 (GraalVM native 或 JVM)，适合实时 lint。
+* **可扩展性 (clj-kondo + Semgrep)**：可以通过 hook + 自定义规则补充安全检测。
+* **SonarQube 集中管理**：Sonar Clojure 插件将多个 lint 工具集成到统一平台，并可以报告依赖漏洞 (nvd)。
+
+### 缺点 (安全方面)
+
+* **规则覆盖不足**：现有 lint 工具 (clj-kondo, Eastwood, Kibit) 并未内建针对 OWASP Top‑10 的安全规则。
+* **无污点分析 /数据流分析**：这些工具主要是语法 / AST 检查，不做污点传播 (taint) 分析，因此无法发现注入、IDOR、越权等复杂漏洞。
+* **宏 & 动态特性困难**：Clojure 大量使用宏和动态代码 (eval, read-string 等)，静态工具难以全面捕获安全问题。
+* **Semgrep 规则需手写**：用户必须编写大量规则 (pattern) 来覆盖安全漏洞，这对团队有门槛。
+* **Sonar 插件安全功能有限**：虽然有 nvd sensor，但对逻辑漏洞 (访问控制、业务安全) 支持非常薄弱。
+
+---
+
+## 五、建议 (基于现状)
+
+根据上述分析，如果你的目的是 **在 Clojure 项目中做安全扫描 (SAST)**，我建议如下策略：
+
+1. **基础质量扫描 (lint)**
+
+   * 在 CI 中使用 **clj-kondo** + **Eastwood** + **Kibit**，保持代码质量、消除潜在 bug /反模式。
+   * 配置 `clj-kondo/config.edn`，启用 hook 来检测潜在不安全 API (比如 `read-string`, `clojure.java.jdbc` 调用等)。
+
+2. **安全规则 (SAST) 扩展**
+
+   * 使用 **Semgrep**：编写 Clojure 专用的安全规则 (pattern / regex) 来检测访问控制缺失 (IDOR)、SQL 注入、不安全 JWT、CORS misconfig 等。
+   * 维护一套规则库 (可以版本控制)，并持续扩展。
+
+3. **依赖漏洞检测**
+
+   * 使用 **SonarQube Clojure 插件**，启用 `nvd` sensor 来检测第三方库 (JAR) 的已知漏洞 (对应 OWASP A06)。
+
+4. **手动/代码审查**
+
+   * 对关键业务 (认证、权限控制、敏感数据访问) 做 **安全代码审查**，因为静态工具难以完全覆盖业务安全。
+   * 编写单元测试 /集成测试 (Kaocha 等) 来验证访问控制逻辑。
+
+5. **补充动态扫描 (DAST)**
+
+   * 虽然这不是 SAST，但建议引入 **DAST 工具 (比如 OWASP ZAP、Burp)** 来检查实际运行时的安全问题 (CSRF, 强制浏览, 业务逻辑漏洞)。
+
+---
+
+## 六、结论
+
+* 当前 **Clojure 生态中主流静态分析工具 (clj-kondo, Eastwood, Kibit)** 并不是专为 **安全漏洞扫描 (尤其是 OWASP Top-10)** 设计，因此它们对这些漏洞类型的覆盖非常有限。
+* **Semgrep** 是最有潜力用于安全扫描 (SAST) 的工具，因为它支持用户自定义安全规则，但社区尚无丰富的 Clojure 安全规则库。
+* **SonarQube Clojure 插件** 提供了一定的静态质量分析和依赖漏洞检测 (via nvd)，但对业务安全 /访问控制等问题支持薄弱。
+* 要在 Clojure 项目中实现较完善的 SAST，**建议组合使用 lint 工具 + Semgrep 安全规则 + Sonar (依赖扫描) + 安全审查 + 测试**。
+
+---
+
+如果你愿意，我可以帮你 **搭建一个 Clojure SAST 模板 (Semgrep 规则 + clj-kondo hook + CI 配置)**，适配 OWASP Top-10 漏洞，你要我做吗？
+
+[1]: https://github.com/clj-kondo/clj-kondo?utm_source=chatgpt.com "clj-kondo/clj-kondo: Static analyzer and linter for Clojure ..."
+[2]: https://cljdoc.org/d/clj-kondo/clj-kondo/2025.09.22/doc/editor-integration?utm_source=chatgpt.com "Editor integration — clj-kondo 2025.09.22"
+[3]: https://zenn.dev/uochan/articles/2020-12-09-clj-kondo-hooks?utm_source=chatgpt.com "clj-kondo Hooks入門"
+[4]: https://github.com/jonase/eastwood?utm_source=chatgpt.com "jonase/eastwood: Clojure lint tool"
+[5]: https://dev.solita.fi/2019/03/11/code-quality-inspection-for-clojure-with-sonarqube.html?utm_source=chatgpt.com "Code quality inspection for Clojure using SonarQube"
+[6]: https://github.com/fsantiag/sonar-clojure?utm_source=chatgpt.com "fsantiag/sonar-clojure: A SonarQube plugin to analyze ..."
+[7]: https://cljdoc.org/d/jonase/eastwood/0.3.12/api/eastwood.lint?utm_source=chatgpt.com "eastwood.lint — jonase/eastwood 0.3.12"
+[8]: https://cljdoc.org/d/jonase/eastwood/0.4.0/doc/methods-of-annotating-clojure-code-for-analysis-tools?utm_source=chatgpt.com "Methods of annotating Clojure code for analysis tools — jonase/eastwood 0.4.0"
 
