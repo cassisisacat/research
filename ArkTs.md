@@ -241,3 +241,55 @@
 [10]: https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide_no-unsafe-dh-V13?utm_source=chatgpt.com "security/no-unsafe-dh-@security: Security Rules-Code Linter ..."
 [11]: https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide_no-unsafe-rsa-key?utm_source=chatgpt.com "@security/no-unsafe-rsa-key-安全规则 ..."
 [12]: https://developer.huawei.com/consumer/cn/doc/harmonyos-releases/deveco-studio-new-features-600?utm_source=chatgpt.com "新增和增强特性-DevEco Studio-HarmonyOS 6.0.0(20)"
+
+
+
+# 表：通过 `rules` 搜索得到的 **DevEco Code Linter（ArkTS）** 可用于覆盖 **OWASP Mobile Top 10（移动版）** 的规则映射与评估
+
+> 说明：下表按 OWASP 项目逐条列出在 Huawei DevEco Code Linter 文档中可检索到的**具体 rule ID**（或规则类别）、规则简述、对该 OWASP 项目的覆盖评估（能 / 部分能 / 不能），并给出对应的官方文档引用以便团队进一步核验与配置。
+> 我检索的官方页面来自 Huawei 开发者站点（DevEco / Code Linter 规则页），每一条规则行后都列出相应页面作为证据。若某项没有直接规则，我也标注为“无直接规则”。([华为开发者][1])
+
+| OWASP Mobile 项目                                      | 可用 Code Linter rule(s)（rule ID / 名称）                                                                                                                                                                                                                     | 规则简述（为什么相关）                                                                                                 |                                           覆盖评估 | 证据 / 参考（Huawei 文档）                                                                                                                    |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| M1 — Improper Credential Usage（凭证/密钥硬编码、泄露等）         | **（无单一统一 rule 名）** —— 可用项：自定义 secret 检测 + 常量/字符串模式规则（文档说明 Code Linter 可配置规则检测常量/字符串）。                                                                                                                                                                    | Code Linter 文档说明可通过规则文件与 pattern 检测代码中不安全常量/字符串，但没有一条完全覆盖凭证历史/动态生成的规则。                                      |                  **部分能**（静态硬编码/模式可查；动态/历史泄露不可） | Code Linter 配置说明与规则索引（通用说明）。([华为开发者][2])                                                                                              |
+| M2 — Inadequate Supply Chain Security（供应链/SCA）       | **无直接 SCA 规则**（Code Linter 聚焦源代码静态检查，非依赖安全扫描）。                                                                                                                                                                                                           | Code Linter 主要为源代码静态规则，文档未显示 SCA/依赖漏洞扫描规则。                                                                  |                           **不能 / 有限**（靠其他工具补充） | Code Linter 范围与用途说明。([华为开发者][2])                                                                                                      |
+| M3 — Insecure Authentication/Authorization（认证/授权逻辑）  | `@security/specified-interface-call-chain-check`                                                                                                                                                                                                         | 可配置“指定接口的调用链检查”，用于检测敏感 API 是否被在无前置校验情况下调用（对浅层不当调用有效）。                                                       | **部分能（浅层）**（能发现直接敏感 API 调用链问题；复杂业务逻辑仍需人工/深度分析） | 规则页面：`specified-interface-call-chain-check`。([华为开发者][3])                                                                              |
+| M4 — Insufficient Input/Output Validation（输入校验／注入）   | `@security` 中若干 injection/eval/unsafe-template 类型规则（文档列出可检测 unsafe API 使用）                                                                                                                                                                               | 检测 `eval`、动态模板、不安全字符串拼接等典型注入源；但对复杂跨函数数据流的输入校验缺乏深度污点追踪。                                                      |                    **部分能**（模式匹配式检测可用，深层数据流需补充） | Code Linter 安全规则总览说明（`@security` 相关规则集合）。([华为开发者][1])                                                                                 |
+| M5 — Insecure Communication（明文/不安全 TLS / 证书校验跳过）     | 相关加密与配置检测（见 M10 规则）；可能存在针对“禁用证书验证/使用 http URL”之规则（需在项目检索具体关键词）。                                                                                                                                                                                          | Code Linter 对不安全加密模式检测较好；对网络层（TLS 版本/证书校验绕过）的检测依赖是否存在匹配调用参数的规则。                                             |          **部分能**（加密算法覆盖好；网络配置/证书检查需规则支持或运行时验证） | 加密及安全规则集合文档、规则变更说明。([华为开发者][1])                                                                                                       |
+| M6 — Inadequate Privacy Controls（隐私 / PII 过度收集或明文存储） | 可检测“明文写入存储 / 敏感字段写入”的代码模式（需自定义或启用规则）                                                                                                                                                                                                                     | Code Linter 能发现明显的写入/日志输出 PII 的模式，但对“是否过度收集/合规”无法语义判断。                                                      |                     **部分能**（显性写入可检；策略/最小化判断不可） | Code Linter 配置与规则说明（示例：可自定义要匹配的字段/文件写入检测）。([华为开发者][2])                                                                                |
+| M7 — Insufficient Binary Protections（混淆/签名/调试信息）     | 规则可检测源码中的调试/打印（`console.log` / debug 输出）和敏感日志写出；但 **无二进制混淆/签名检测规则**                                                                                                                                                                                      | 可在源代码层面捕捉残留调试输出，但无法验证包是否混淆或签名（属于打包/CI 层面检测）。                                                                |                            **部分能（仅源码日志/调试检测）** | Code Linter 文档与规则配置说明。([华为开发者][2])                                                                                                    |
+| M8 — Security Misconfiguration（配置错误 / 权限过宽）          | 可检测代码层面显式不安全配置（例如 `DEBUG = true`、不安全常量）；但对 manifest / 平台级配置需检查是否支持该文件类型。                                                                                                                                                                                 | Code Linter 支持通过 `files`/`ignore` 配置扩展检测范围，若启用对应规则可对配置文件做静态检查，否则需使用 manifest lint 工具。                       |                        **部分能**（代码内可检；平台配置需视支持） | Code Linter 配置与规则说明、最佳实践建议。([华为开发者][2])                                                                                               |
+| M9 — Insecure Data Storage（本地明文存储 / 弱密钥）             | `@security/no-unsafe-hash`, `@security/no-unsafe-aes`, `@security/no-unsafe-3des`, `@security/no-unsafe-dh-key`, `@security/no-unsafe-rsa-key`, `@security/no-unsafe-kdf` 等                                                                              | 一组专门针对不安全哈希、不安全对称/非对称算法、弱密钥长度与不当 KDF 的规则，能检测常见加密误用与弱算法（对本地存储明文的直接写入也可通过模式规则发现）。                             |                             **能（加密/算法层面覆盖良好）** | 规则页示例：`no-unsafe-hash`、`no-unsafe-aes`、`no-unsafe-3des`、`no-unsafe-dh-key`、`no-unsafe-rsa-encrypt`、`no-unsafe-kdf` 等。([华为开发者][4])     |
+| M10 — Insufficient Cryptography（使用不安全算法 / 模式）        | **大量专门规则**：`@security/no-unsafe-hash`、`@security/no-unsafe-aes`、`@security/no-unsafe-3des`、`@security/no-unsafe-dh` / `no-unsafe-dh-key`、`@security/no-unsafe-ecdsa`、`@security/no-unsafe-sm2-key`、`@security/no-unsafe-kdf`、`@security/no-unsafe-mac` 等 | Code Linter 在“加密误用”方面有丰富、明确的规则：禁止 MD5/SHA-1、禁止 AES-ECB / 3DES、检测弱密钥长度、不安全 KDF/MAC/签名用法等，且规则文档通常列有示例与建议替代方案。 |                  **能（覆盖优秀 — Code Linter 的强项）** | 规则集合总览与单条规则页面（`no-unsafe-hash`、`no-unsafe-aes`、`no-unsafe-3des`、`no-unsafe-ecdsa`、`no-unsafe-sm2-key`、`no-unsafe-kdf` 等）。([华为开发者][1]) |
+
+---
+
+## 关键发现（简短）
+
+* **最佳覆盖项：M10（加密误用）与 M9（不安全存储）** —— DevEco Code Linter 提供了大量 `@security/no-unsafe-*` 规则，能检测常见的算法/模式/密钥长度误用，并给出替代建议；这些规则文档可直接在 Huawei 官方站点找到并在 `code-linter.json5` 中开启/提升为 `error`。([华为开发者][4])
+* **受限项：M2（供应链）、M3（复杂业务授权）、M7（打包/混淆/签名）** —— 这类问题往往超出源代码静态的语法模式匹配能力，需结合 SCA、CI 打包检查、动态检测与人工审计。([华为开发者][2])
+
+## 建议（落地优先级）
+
+1. **立即动作（高优先）**：在项目 `code-linter.json5` 中启用 `@security` 规则集，并将 `no-unsafe-*` 相关规则提升为 `error`（如 `@security/no-unsafe-hash`, `@security/no-unsafe-aes`, `@security/no-unsafe-3des`, `@security/no-unsafe-dh-key`, `@security/no-unsafe-rsa-encrypt`, `@security/no-unsafe-kdf`）。参见规则页面与配置示例。([华为开发者][5])
+2. **补强工具链（高优先）**：在 CI 中增加 SCA（如 Snyk/Dependabot）、secrets scanning（git-secrets / trufflehog）、以及支持 taint analysis 的 SAST（以覆盖 M1/M2/M3/M4 的不足）。([华为开发者][2])
+3. **自定义规则**：对团队关注的 PII 字段名、敏感 API 与项目内特定模式（例如禁用证书校验函数调用）编写自定义 Code Linter 规则或启用 `specified-interface-call-chain-check`。([华为开发者][3])
+
+---
+
+## 若需我现在继续做（我会在本响应中直接完成）
+
+* 我可以**把检索到的每个 `@security/no-unsafe-*` 规则页逐条列成可复制的清单（带官方链接）**，并输出一份 `code-linter.json5` 推荐模板（把关键规则设为 `error`）——你想要我马上生成哪一项？（回复：“规则清单” 或 “配置模板” 或 “都要”，我会把对应内容直接贴出并附上每条规则的官方引用。）
+
+---
+
+**参考文档（部分关键检索结果，便于团队复查）**：Huawei DevEco Code Linter 规则总览与典型规则页面（示例）：`no-unsafe-hash`、`no-unsafe-aes`、`no-unsafe-3des`、`specified-interface-call-chain-check`、`no-unsafe-dh-key`、`no-unsafe-rsa-encrypt`、`no-unsafe-kdf` 等。([华为开发者][5])
+
+如果你希望我把表格“展开”成 **每一条规则的完整文档摘录（规则描述 + 反例/正例 + 配置片段）** 并生成一个 `code-linter.json5` 推荐模板，我现在可以直接为你生成完整清单与模板（包含每条规则的官方链接）。你想要我立刻生成哪种输出？
+
+[1]: https://developer.huawei.com/consumer/en/doc/harmonyos-guides-V13/ide-security-V13?utm_source=chatgpt.com "Security Rules"
+[2]: https://developer.huawei.com/consumer/cn/doc/best-practices/bpta-stability-ide-static-detection?utm_source=chatgpt.com "使用DevEco Studio静态检测编码规范"
+[3]: https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide-specified-interface-call-chain-check-V13?utm_source=chatgpt.com "security/specified-interface-call-chain-check"
+[4]: https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide_no-unsafe-hash?utm_source=chatgpt.com "security/no-unsafe-hash"
+[5]: https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide_no-unsafe-hash-V13?utm_source=chatgpt.com "security/no-unsafe-hash"
+
