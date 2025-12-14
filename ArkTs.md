@@ -1,3 +1,4 @@
+
 # 调查报告 — DevEco **Code Linter** (ArkTS) 对 OWASP Mobile Top 10（移动版 2024 列表）覆盖情况分析
 
 *作者假设：你是一位负责静态代码扫描的安全负责人。报告面向团队用于评估现有 Code Linter 能力、缺口与可改进项。*
@@ -293,3 +294,55 @@
 [4]: https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide_no-unsafe-hash?utm_source=chatgpt.com "security/no-unsafe-hash"
 [5]: https://developer.huawei.com/consumer/en/doc/harmonyos-guides/ide_no-unsafe-hash-V13?utm_source=chatgpt.com "security/no-unsafe-hash"
 
+
+
+M1 — Improper Credential Usage（凭证/密钥硬编码、泄露等）
+partial
+@typescript-eslint/no-unsafe-argument
+@typescript-eslint/no-unsafe-assignment
+@typescript-eslint/no-unsafe-call
+@typescript-eslint/no-unsafe-member-access
+禁止成员访问“any”类型的值。
+用于发现 any/不安全类型返回，间接帮助发现类型误用导致凭证被误处理
+
+Code Linter 能通过静态匹配常见的硬编码字符串模式与危险 API 使用给出告警，但**对动态生成凭证、凭证在外部文件/配置中的泄露、或凭证被误传到不安全通道（跨函数/跨模块数据流）**的检测受限。 
+
+M2 — Inadequate Supply Chain Security（供应链/SCA）
+Weak
+
+M3 — Insecure Authentication/Authorization（认证/授权逻辑）
+partial
+@security/specified-interface-call-chain-check
+该规则旨在标识指定接口的调用链，方便接口管理，调用链最大数量为5000。
+利用 specified-interface-call-chain-check 类规则为常见敏感 API（如删除/转账/敏感数据导出）定义检测链与白名单。
+我觉得跟DAST的关系比较大吧
+
+pending M4 — Insufficient Input/Output Validation（输入校验／注入）
+partial
+@security 中若干 injection/eval/unsafe-template
+@typescript-eslint 和 @correctness / @security 中存在用于发现 不安全的 eval/动态模板/字符串拼接、未做边界检查 的规则
+
+
+M5 — Insecure Communication（明文/不安全 TLS / 证书校验跳过）
+partial
+Code Linter 很擅长检测使用不安全加密算法或弱密钥（见 M10），但**对网络通信层面的配置（如 TLS 版本、证书校验是否被显式跳过）**能否准确识别取决于是否存在对应规则匹配对客户端网络调用和参数（例如 setAllowAllCertificates(true)）的检测
+
+M6 — Inadequate Privacy Controls（隐私 / PII 过度收集或明文存储）
+partial
+Code Linter 可检测静态 将敏感字段写入本地存储（如 LocalStorage / 文件） 的直接模式，或使用不恰当存储 API 的代码；但对“是否属于 PII/是否过度收集”这类语义判断无法自动完整判断。 检测能力评估：部分能。能发现明显的敏感数据明文写入/未加密存储模式，但对“隐私策略合规性/最小化收集”无法静态判定。
+
+M7 — Insufficient Binary Protections（混淆/签名/调试信息）
+partial
+SAST 只能发现源码层面的调试/日志残留，不能替代专门的二进制安全检测工具
+
+
+M8 — Security Misconfiguration（配置错误 / 权限过宽）
+partial
+
+M9 — Insecure Data Storage（本地明文存储 / 弱密钥）
+strong
+@security/no-unsafe-hash, @security/no-unsafe-aes, @security/no-unsafe-3des, @security/no-unsafe-dh-key, @security/no-unsafe-rsa-key, @security/no-unsafe-kdf 等
+
+M10 — Insufficient Cryptography（使用不安全算法 / 模式）
+Strong
+@security/no-unsafe-hash、@security/no-unsafe-aes、@security/no-unsafe-3des、@security/no-unsafe-dh / no-unsafe-dh-key、@security/no-unsafe-ecdsa、@security/no-unsafe-sm2-key、@security/no-unsafe-kdf、@security/no-unsafe-mac 等
