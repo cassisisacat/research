@@ -338,6 +338,9 @@ SAST 只能发现源码层面的调试/日志残留，不能替代专门的二�
 
 M8 — Security Misconfiguration（配置错误 / 权限过宽）
 partial
+类别/规则前缀	可覆盖的问题	M8 是否符合
+@security/no-unsafe-hash
+
 
 M9 — Insecure Data Storage（本地明文存储 / 弱密钥）
 strong
